@@ -3,10 +3,14 @@
 	import type { Card } from "./types"
 
 	export let card: Card
+	export let isReadOnly = false
 
-	export let onDragStart: (cardId: string) => void
-	export let handleCardEdit: (card: Card) => void
-	export let handleCardDelete: (card: Card) => void
+	type NoOp = () => {}
+
+	// Handlers are optional, since a readonly card has none
+	export let onDragStart: ((cardId: string) => void) | NoOp = () => {}
+	export let handleCardEdit: ((card: Card) => void) | NoOp = () => {}
+	export let handleCardDelete: ((card: Card) => void) | NoOp = () => {}
 </script>
 
 <div
@@ -15,6 +19,7 @@
 		on_drag_start: onDragStart,
 	}}
 	class="card"
+	class:readonly={isReadOnly}
 	data-position={card.position}
 >
 	<span class="title">{card.title}</span>
@@ -49,6 +54,10 @@
 		align-items: center;
 		column-gap: 1em;
 		animation: pop-in 0.25s;
+	}
+
+	.card.readonly {
+		pointer-events: none;
 	}
 
 	.card .title {

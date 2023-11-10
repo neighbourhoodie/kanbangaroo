@@ -2,7 +2,14 @@
 	import PouchDB from "pouchdb"
 	import { onMount } from "svelte"
 
-	import type { Card, NewCard, Column, AnyDoc, ActivityLog } from "./types"
+	import type {
+		Card,
+		NewCard,
+		Column,
+		AnyDoc,
+		ActivityLog,
+		ConflictData,
+	} from "./types"
 	import { merge } from "./merge"
 	import { sortBy } from "./helpers"
 
@@ -10,6 +17,7 @@
 	import ColumnComponent from "./Column.svelte"
 	import CardComponent from "./Card.svelte"
 	import CardEditSection from "./CardEditSection.svelte"
+	import ConflictResolution from "./ConflictResolution.svelte"
 
 	// Feature Flags
 
@@ -47,6 +55,7 @@
 	// Our data
 	let cards: Card[] = []
 	let columns: Column[] = []
+	let conflictToResolve: ConflictData | undefined
 
 	// Lifecycle
 
@@ -223,18 +232,22 @@
 							"❌ Could not resolve conflict automatically. These conflicts persist:",
 							mergeResult.conflicts
 						)
-						alert(
-							"The card was changed while you were editing it. Please cancel the edit and start over."
-						)
+						conflictToResolve = {
+							base: baseRevision!,
+							mine: newVersion,
+							theirs: secondConflict,
+						}
 					}
 				} catch (error) {
 					if ((error as PouchDB.Core.Error).reason === "deleted") {
 						logConflictInfo(
 							"🗑️ The second conflicting revision was deleted, could not attempt an automatic merge."
 						)
-						alert(
-							"The card was deleted while you were editing it. Please cancel the edit and create a new card."
-						)
+						conflictToResolve = {
+							base: baseRevision!,
+							mine: newVersion,
+							theirs: undefined,
+						}
 					}
 				}
 				logConflictInfo("End of automatic conflict resolution")
@@ -247,9 +260,20 @@
 		// This is also used to pick the other party as the conflict winner,
 		// since their change is already in the DB, all we have to do is throw
 		// our local change away
+		conflictToResolve = undefined
 		editableCard = undefined
 	}
 </script>
+
+{#if conflictToResolve}
+	<ConflictResolution
+		{conflictToResolve}
+		{columns}
+		iWinHandler={tryToPut}
+		theyWinHandler={removeConflictData}
+		{db}
+	/>
+{/if}
 
 <UserInfo {currentUserName} onUpdateUserName={updateUserName} />
 <ul class="columns">

@@ -32,3 +32,9 @@ export type ActivityLog = {
 }
 
 export type AnyDoc = Card | Column | ActivityLog
+
+export type ConflictData = {
+  base: PouchDB.Core.PostDocument<Card>,
+  mine: PouchDB.Core.PostDocument<Card>,
+  theirs?: PouchDB.Core.PostDocument<Card>
+}
