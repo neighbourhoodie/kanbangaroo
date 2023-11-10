@@ -5,8 +5,6 @@ export type Card = {
   position: number
   _id: string
   title: string
-  updatedBy?: string
-  updatedAt?: string
   createdBy: string
   createdAt: string
 }
@@ -26,4 +24,11 @@ export type NewCard = {
   createdAt: string
 }
 
-export type AnyDoc = Card | Column
+export type ActivityLog = {
+  type: "activityLog"
+  _id: string
+  updatedBy: string
+  updatedAt: string
+}
+
+export type AnyDoc = Card | Column | ActivityLog

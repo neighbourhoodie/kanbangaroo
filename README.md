@@ -68,6 +68,6 @@ export default defineConfig({
 
 ## Accompanying Blog posts
 
-This repo accompanies a series of blog posts, and the state you’re looking at, tag `step-1`, belongs to the first one, [A real-time multi-user Kanban board with CouchDB and Svelte](https://neighbourhood.ie/blog/2024/12/05/realtime-multiuser-kanban-board-with-couchdb).
+This repo accompanies a series of blog posts, and the state you’re looking at, tag `step-2`, belongs to the second one, [Automatic Conflict Resolution](https://neighbourhood.ie/blog/2024/12/11/automatic-conflict-resolution).
 
 If you want to follow through the steps, each one is a tag you can check out. Step 1 is `git checkout step-1`, and the other steps just increment the number.

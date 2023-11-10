@@ -2,13 +2,23 @@
 	import PouchDB from "pouchdb"
 	import { onMount } from "svelte"
 
-	import type { Card, NewCard, Column, AnyDoc } from "./types"
+	import type { Card, NewCard, Column, AnyDoc, ActivityLog } from "./types"
+	import { merge } from "./merge"
 	import { sortBy } from "./helpers"
 
 	import UserInfo from "./UserInfo.svelte"
 	import ColumnComponent from "./Column.svelte"
 	import CardComponent from "./Card.svelte"
 	import CardEditSection from "./CardEditSection.svelte"
+
+	// Feature Flags
+
+	const enableLoggingConflictInfo = true
+
+	function logConflictInfo(...args: any[]) {
+		if (!enableLoggingConflictInfo) return
+		console.log(...args)
+	}
 
 	// Setup
 
@@ -33,7 +43,6 @@
 	// Must be set at the very beginning of the interaction, eg. on drag start
 	let currentlyEditing: Card | undefined
 	let currentlyMoving: Card | undefined
-	let currentlyDeleting: Card | undefined
 
 	// Our data
 	let cards: Card[] = []
@@ -117,9 +126,10 @@
 	async function onDropzoneHandler(column_id: string, targetPosition: number) {
 		if (!currentlyMoving) return
 		const card = { ...currentlyMoving }
+		currentlyMoving = undefined
 		card.column = column_id
 		card.position = targetPosition
-		await tryToPut(card)
+		await tryToPut(card, currentlyMoving)
 	}
 
 	// Card handlers
@@ -140,8 +150,7 @@
 	}
 
 	async function handleCardDelete(card: Card) {
-		currentlyDeleting = { ...card }
-		await tryToPut({ ...card, _deleted: true })
+		await tryToPut({ ...card, _deleted: true }, { ...card })
 	}
 
 	async function handleClearCardInputs(cardId?: string) {
@@ -166,24 +175,79 @@
 				_id: `card-${crypto.randomUUID()}`,
 			}
 		}
-		await tryToPut(card)
+		await tryToPut(card, currentlyEditing)
 	}
 
 	// Conflict-aware PUT
 
-	async function tryToPut(newVersion: PouchDB.Core.PutDocument<Card>) {
+	async function tryToPut(
+		newVersion: PouchDB.Core.PutDocument<Card>,
+		baseRevision?: PouchDB.Core.PutDocument<Card>
+	) {
 		try {
-			await db.put({
-				...newVersion,
-				updatedAt: new Date().toISOString(),
-				updatedBy: currentUserName,
-			})
+			const putResponse = await db.put(newVersion)
+			if (putResponse.ok) {
+				const log: ActivityLog = {
+					type: "activityLog",
+					updatedAt: new Date().toISOString(),
+					updatedBy: currentUserName,
+					_id: `log-${putResponse.id}-${putResponse.rev}`,
+				}
+				db.put(log)
+			}
+			removeConflictData()
 		} catch (error) {
 			if ((error as PouchDB.Core.Error).status === 409) {
-				console.log("Conflict: Could not save your changes!", error)
+				// Can only happen if there was a baseRevision
+				logConflictInfo("--------------------------------------")
+				logConflictInfo("💥 A conflict occurred!")
+				logConflictInfo("🤖 Start of automatic conflict resolution")
+				logConflictInfo("- *️⃣ Base revision:", baseRevision)
+				logConflictInfo("- 1️⃣ First conflicting revision:", newVersion)
+				let secondConflict
+				try {
+					secondConflict = await db.get<Card>(newVersion._id)
+					logConflictInfo("- 2️⃣ Second conflicting revision:", secondConflict)
+					const mergeResult = merge(baseRevision, newVersion, secondConflict)
+					logConflictInfo("- ⏩️ Result of the three-way-merge:", mergeResult)
+					if (!mergeResult.conflicts) {
+						const resolution = await db.put(mergeResult.merged)
+						logConflictInfo("- 🆕 The new PUT payload is:", mergeResult.merged)
+						logConflictInfo(
+							"- ✅ The conflict could be resolved automatically: ",
+							resolution
+						)
+						removeConflictData()
+					} else {
+						logConflictInfo(
+							"❌ Could not resolve conflict automatically. These conflicts persist:",
+							mergeResult.conflicts
+						)
+						alert(
+							"The card was changed while you were editing it. Please cancel the edit and start over."
+						)
+					}
+				} catch (error) {
+					if ((error as PouchDB.Core.Error).reason === "deleted") {
+						logConflictInfo(
+							"🗑️ The second conflicting revision was deleted, could not attempt an automatic merge."
+						)
+						alert(
+							"The card was deleted while you were editing it. Please cancel the edit and create a new card."
+						)
+					}
+				}
+				logConflictInfo("End of automatic conflict resolution")
 			}
 		}
-		handleClearCardInputs(newVersion._id)
+	}
+
+	function removeConflictData() {
+		// Removes local state concerning the current conflict.
+		// This is also used to pick the other party as the conflict winner,
+		// since their change is already in the DB, all we have to do is throw
+		// our local change away
+		editableCard = undefined
 	}
 </script>
 
