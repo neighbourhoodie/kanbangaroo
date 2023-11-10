@@ -1,8 +1,12 @@
 <script lang="ts">
+	import Countdown from './Countdown.svelte'
 	import { draggable } from "./drag-and-drop"
-	import type { Card } from "./types"
+	import { getTextColor } from "./nice-random-color"
+	import type { Card, Lock, OnlineUser } from "./types"
 
+	export let locks: Lock[] = []
 	export let card: Card
+	export let onlineUsers: OnlineUser[] = []
 	export let isReadOnly = false
 
 	type NoOp = () => {}
@@ -11,6 +15,10 @@
 	export let onDragStart: ((cardId: string) => void) | NoOp = () => {}
 	export let handleCardEdit: ((card: Card) => void) | NoOp = () => {}
 	export let handleCardDelete: ((card: Card) => void) | NoOp = () => {}
+  export let onLockEnd:  ((cardId: string) => void) = () => {}
+
+	$: lock = locks.find((lock) => lock.locks === card._id)
+	$: lockingUser = onlineUsers.find((user) => user.name === lock?.lockedBy)
 </script>
 
 <div
@@ -20,8 +28,20 @@
 	}}
 	class="card"
 	class:readonly={isReadOnly}
+	class:locked={lock}
+	data-lockedby={lock?.lockedBy}
+	style:border-color={lockingUser?.color && lockingUser?.color}
 	data-position={card.position}
 >
+	{#if lock}
+		<span
+			class="lockLabel"
+      style:background-color={lockingUser?.color}
+			style:color={getTextColor(
+				lockingUser?.color
+			)}>{lock?.lockedBy} <Countdown lockedAt={lock?.lockedAt} unlock={() => onLockEnd(card._id)}/></span
+		>
+	{/if}
 	<span class="title">{card.title}</span>
 	<span class="position">{card.position}</span>
 	<button on:click={() => handleCardEdit(card)}>✏️</button>
@@ -58,6 +78,35 @@
 
 	.card.readonly {
 		pointer-events: none;
+	}
+
+	.card.locked {
+		pointer-events: none;
+		border-width: 3px;
+	}
+
+	.card.locked * {
+		opacity: 0.5;
+	}
+
+	.card.locked .lockLabel {
+		position: absolute;
+		top: -0.8em;
+		font-size: 0.75em;
+		font-weight: 600;
+		border-radius: 1em;
+		padding: 0 0.75em;
+		opacity: 1;
+	}
+
+	.card.locked:before {
+		content: "🔒";
+		filter: grayscale(1) brightness(0);
+		display: block;
+		position: absolute;
+		width: calc(100% - 2em);
+		z-index: 1;
+		text-align: center;
 	}
 
 	.card .title {

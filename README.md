@@ -68,6 +68,6 @@ export default defineConfig({
 
 ## Accompanying Blog posts
 
-This repo accompanies a series of blog posts, and the state you’re looking at, tag `step-3`, belongs to the third one, [Manual Conflict Resolution with CouchDB and Svelte](https://neighbourhood.ie/blog/2024/12/18/manual-conflict-resolution-with-couchdb-and-svelte).
+This repo accompanies a series of blog posts, and the state you’re looking at, tag `step-4`, belongs to the fourth one, [Resource Locking with CouchDB and Svelte](https://neighbourhood.ie/blog/2025/01/15/resource-locking-with-couchdb-and-svelte).
 
 If you want to follow through the steps, each one is a tag you can check out. Step 1 is `git checkout step-1`, and the other steps just increment the number.
