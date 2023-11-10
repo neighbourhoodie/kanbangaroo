@@ -8,10 +8,13 @@
 		Column,
 		AnyDoc,
 		ActivityLog,
+		Lock,
+		OnlineUser,
 		ConflictData,
 	} from "./types"
 	import { merge } from "./merge"
 	import { sortBy } from "./helpers"
+	import { niceRandomColor } from "./nice-random-color"
 
 	import UserInfo from "./UserInfo.svelte"
 	import ColumnComponent from "./Column.svelte"
@@ -21,6 +24,7 @@
 
 	// Feature Flags
 
+	const enableLocking = true
 	const enableLoggingConflictInfo = true
 
 	function logConflictInfo(...args: any[]) {
@@ -56,10 +60,13 @@
 	let cards: Card[] = []
 	let columns: Column[] = []
 	let conflictToResolve: ConflictData | undefined
+	let locks: Lock[] = []
+	let onlineUsers: OnlineUser[] = []
 
 	// Lifecycle
 
 	onMount(() => {
+		setOnlineUser(currentUserName)
 		const changes = db
 			.changes<AnyDoc>({
 				since: 0,
@@ -75,6 +82,12 @@
 						case "column":
 							handleChange(columns, change)
 							break
+						case "lock":
+							handleChange(locks, change)
+							break
+						case "onlineUser":
+							handleChange(onlineUsers, change)
+							break
 						default:
 							break
 					}
@@ -82,6 +95,8 @@
 				// Reassign everything so it’s reactive
 				cards = [...cards.sort(sortBy("position"))]
 				columns = [...columns.sort(sortBy("position"))]
+				locks = locks
+				onlineUsers = onlineUsers
 			})
 			.on("complete", (info) => {
 				console.log("Changes follower complete/cancelled", info)
@@ -98,7 +113,43 @@
 	// User handling
 
 	async function updateUserName(name: string) {
-		localStorage.setItem("kanbangaroo-username", name)
+		if (name === currentUserName) return
+		await removeCurrentOnlineUser()
+		currentUserName = name
+		setOnlineUser(name)
+	}
+
+	async function setOnlineUser(userName: string) {
+		const newOnlineUser: OnlineUser = {
+			_id: `onlineuser-${userName}`,
+			type: "onlineUser",
+			active: true,
+			name: userName,
+			color: niceRandomColor(),
+		}
+		try {
+			await db.put(newOnlineUser)
+		} catch (error) {
+			if ((error as PouchDB.Core.Error).status === 409) {
+				// Previous session did not manage to delete the onlineUser doc
+				// This happens during development due to HMR, for example
+				console.log(
+					"☝️ This 409 (Conflict) can be ignored, see the setOnlineUser function in the Board component"
+				)
+			}
+		}
+		localStorage.setItem("kanbangaroo-username", userName)
+	}
+
+	async function removeCurrentOnlineUser() {
+		const currentUser = onlineUsers.find(
+			(user) => user._id === `onlineuser-${currentUserName}`
+		)
+		if (!currentUser) return
+		await db.put({
+			...currentUser,
+			_deleted: true,
+		})
 	}
 
 	// Changes feed
@@ -129,6 +180,8 @@
 	async function onDragStart(cardId: string) {
 		const card = cards.find((card) => card._id === cardId)
 		if (!card) return
+		const lockAchieved = await lock(card._id)
+		if (!lockAchieved) return
 		currentlyMoving = { ...card }
 	}
 
@@ -139,6 +192,47 @@
 		card.column = column_id
 		card.position = targetPosition
 		await tryToPut(card, currentlyMoving)
+	}
+
+	// Locking and Unlocking
+
+	async function lock(docId: string) {
+		if (!enableLocking) return true
+		const _id = `lock-${docId}`
+		const lock: PouchDB.Core.PutDocument<Lock> = {
+			_id,
+			type: "lock",
+			locks: docId,
+			lockedAt: new Date().toJSON(),
+			lockedBy: currentUserName,
+		}
+		let lockAchieved = false
+		try {
+			const lockResponse = await db.put(lock)
+			if (lockResponse.ok) {
+				lockAchieved = true
+			}
+		} catch (error) {
+			if ((error as PouchDB.Core.Error).status === 409) {
+				// TODO: pop up message about who locked it
+			}
+			console.log("lock error", error)
+		}
+		return lockAchieved
+	}
+
+	async function unlock(docId: string) {
+		if (!enableLocking) return
+		if (!docId) return
+		const _id = `lock-${docId}`
+		const lockDocument = locks.find((lock) => lock._id === _id)
+		if (!lockDocument) return
+    if (lockDocument?.lockedBy !== currentUserName) return
+		try {
+			await db.put({ ...lockDocument, _deleted: true })
+		} catch (error) {
+			console.log("unlock error", error)
+		}
 	}
 
 	// Card handlers
@@ -163,6 +257,9 @@
 	}
 
 	async function handleClearCardInputs(cardId?: string) {
+		if (cardId) {
+			await unlock(cardId)
+		}
 		editableCard = undefined
 		currentlyEditing = undefined
 	}
@@ -253,6 +350,7 @@
 				logConflictInfo("End of automatic conflict resolution")
 			}
 		}
+		await unlock(newVersion._id)
 	}
 
 	function removeConflictData() {
@@ -275,7 +373,7 @@
 	/>
 {/if}
 
-<UserInfo {currentUserName} onUpdateUserName={updateUserName} />
+<UserInfo {currentUserName} {onlineUsers} onUpdateUserName={updateUserName} />
 <ul class="columns">
 	{#each columns as column (column._id)}
 		{@const cardsInColumn = cards.filter((card) => card.column === column._id)}
@@ -283,9 +381,12 @@
 			{#each cardsInColumn as card (card._id)}
 				<CardComponent
 					{card}
+					{locks}
+					{onlineUsers}
 					{onDragStart}
 					{handleCardEdit}
 					{handleCardDelete}
+          onLockEnd={handleClearCardInputs}
 				/>
 			{/each}
 		</ColumnComponent>

@@ -31,7 +31,23 @@ export type ActivityLog = {
   updatedAt: string
 }
 
-export type AnyDoc = Card | Column | ActivityLog
+export type Lock = {
+  type: 'lock'
+  _id: string
+  locks: string    // `_id` of the target document
+  lockedBy: string // username (`_id` in a real app)
+  lockedAt: string // ISO datetime string
+}
+
+export type OnlineUser = {
+  type: 'onlineUser'
+  _id: string
+  active: boolean
+  name: string
+  color: string
+}
+
+export type AnyDoc = Card | Column | ActivityLog | Lock | OnlineUser
 
 export type ConflictData = {
   base: PouchDB.Core.PostDocument<Card>,
